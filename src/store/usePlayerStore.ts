@@ -65,11 +65,18 @@ export const usePlayerStore = create<PlayerState>()(
       setPlayerInstance: (playerInstance) => set({ playerInstance }),
 
       playSong: (song) => {
+        const prevSong = get().currentSong;
         get().setCurrentSong(song);
         set({ isPlaying: true });
-        const player = get().playerInstance;
-        if (player && typeof player.loadVideoById === "function") {
-          player.loadVideoById(song.id);
+        
+        // If playing the same song again, restart it. 
+        // Otherwise, let YTPlayerManager's useEffect on [currentSong] handle the single loadVideoById.
+        if (prevSong && prevSong.id === song.id) {
+          const player = get().playerInstance;
+          if (player) {
+            if (typeof player.seekTo === "function") player.seekTo(0);
+            if (typeof player.playVideo === "function") player.playVideo();
+          }
         }
       },
 

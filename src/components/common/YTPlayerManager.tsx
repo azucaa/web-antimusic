@@ -120,12 +120,14 @@ export default function YTPlayerManager() {
   const initPlayer = () => {
     if (!window.YT || !window.YT.Player) return;
 
+    const shouldAutoplay = currentSong && usePlayerStore.getState().isPlaying;
+
     playerRef.current = new window.YT.Player("yt-hidden-player", {
-      height: "0",
-      width: "0",
+      height: "200",
+      width: "200",
       videoId: currentSong?.id || "",
       playerVars: {
-        autoplay: 0,
+        autoplay: shouldAutoplay ? 1 : 0,
         controls: 0,
         disablekb: 1,
         fs: 0,
@@ -140,6 +142,10 @@ export default function YTPlayerManager() {
           // Set initial configs
           event.target.setVolume(volume);
           if (isMuted) event.target.mute();
+
+          if (shouldAutoplay) {
+            event.target.playVideo();
+          }
         },
         onStateChange: (event: any) => {
           const state = event.data;
@@ -205,7 +211,7 @@ export default function YTPlayerManager() {
   };
 
   return (
-    <div className="absolute top-0 left-0 w-0 h-0 opacity-0 pointer-events-none overflow-hidden select-none">
+    <div className="fixed top-[-9999px] left-[-9999px] w-[200px] h-[200px] pointer-events-none overflow-hidden select-none z-[-9999]">
       <div id="yt-hidden-player" />
     </div>
   );

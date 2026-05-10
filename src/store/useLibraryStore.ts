@@ -41,6 +41,9 @@ interface LibraryState {
   // Album Actions
   saveAlbum: (album: Album) => void;
   unsaveAlbum: (albumId: string) => void;
+
+  // Favorite Actions
+  toggleFavorite: (song: Song) => void;
 }
 
 export const useLibraryStore = create<LibraryState>()(
@@ -152,6 +155,32 @@ export const useLibraryStore = create<LibraryState>()(
       unsaveAlbum: (albumId) => {
         const { savedAlbums } = get();
         set({ savedAlbums: savedAlbums.filter(a => a.id !== albumId) });
+      },
+
+      toggleFavorite: (song) => {
+        const { playlists } = get();
+        const likedPlaylist = playlists.find((p) => p.id === "liked");
+        
+        if (!likedPlaylist) {
+          const newLikedPlaylist = {
+            id: "liked",
+            title: "Lagu Favorit",
+            songs: [song],
+            createdAt: new Date().toISOString(),
+          };
+          set({ playlists: [newLikedPlaylist, ...playlists] });
+        } else {
+          const songExists = likedPlaylist.songs.some((s) => s.id === song.id);
+          const updatedSongs = songExists
+            ? likedPlaylist.songs.filter((s) => s.id !== song.id)
+            : [...likedPlaylist.songs, song];
+            
+          set({
+            playlists: playlists.map((p) =>
+              p.id === "liked" ? { ...p, songs: updatedSongs } : p
+            ),
+          });
+        }
       },
     }),
     {

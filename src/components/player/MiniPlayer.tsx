@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { usePlayerStore } from "@/store/usePlayerStore";
 import { useQueueStore } from "@/store/useQueueStore";
@@ -8,10 +9,10 @@ import { useLibraryStore } from "@/store/useLibraryStore";
 import { useUIStore } from "@/store/useUIStore";
 import { 
   Play, Pause, SkipForward, SkipBack, Volume2, VolumeX, 
-  ChevronUp, ChevronDown, Plus, Music, Loader2, Check, Users
+  ChevronUp, ChevronDown, Plus, Music, Loader2, Check, Users, Sparkles
 } from "lucide-react";
 import SyncedLyricsView from "./SyncedLyricsView";
-import { useSyncStore } from "@/store/useSyncStore";
+import { useRoomStore } from "@/store/useRoomStore";
 import SyncRoomModal from "./SyncRoomModal";
 
 export default function MiniPlayer() {
@@ -40,7 +41,8 @@ export default function MiniPlayer() {
   const [newPlaylistTitle, setNewPlaylistTitle] = useState<string>("");
   const [addedStatus, setAddedStatus] = useState<Record<string, boolean>>({});
 
-  const { isConnected, role } = useSyncStore();
+  const router = useRouter();
+  const { isConnected, role } = useRoomStore();
   const isGuest = isConnected && role === "guest";
 
   // Keyboard shortcut listeners (Space for play/pause, Left/Right for seek, Esc to collapse)
@@ -283,12 +285,25 @@ export default function MiniPlayer() {
       >
         {/* Expanded Header Navbar */}
         <header className="relative z-10 flex items-center justify-between p-6 shrink-0 border-b border-white/5 max-w-5xl mx-auto w-full">
-          <button 
-            onClick={() => setIsExpanded(false)}
-            className="p-2.5 rounded-full bg-white/5 hover:bg-white/10 text-white transition-all cursor-pointer border border-white/5"
-          >
-            <ChevronDown size={18} />
-          </button>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={() => setIsExpanded(false)}
+              className="p-2.5 rounded-full bg-white/5 hover:bg-white/10 text-white transition-all cursor-pointer border border-white/5"
+            >
+              <ChevronDown size={18} />
+            </button>
+            <button 
+              onClick={() => {
+                setIsExpanded(false);
+                router.push("/now-playing");
+              }}
+              className="px-3.5 py-2 rounded-full bg-[#ff004f]/15 hover:bg-[#ff004f]/25 text-[#ff004f] hover:scale-105 transition-all cursor-pointer border border-[#ff004f]/20 font-black text-[9px] uppercase tracking-wider flex items-center gap-1"
+              title="Gaya Premium Fullscreen"
+            >
+              <Sparkles size={11} className="animate-pulse text-[#ff004f]" />
+              <span>Immersive</span>
+            </button>
+          </div>
 
           {/* Premium Selector tab bar */}
           <div className="flex items-center p-1 rounded-full bg-white/5 border border-white/5 shadow-inner">

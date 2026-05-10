@@ -1,33 +1,20 @@
 import { NextResponse } from "next/server";
+import { ListeningRoom, RoomParticipant, RoomChatMessage, RoomReaction } from "@/types/room";
+import { Song } from "@/types/music";
 
-interface Participant {
-  username: string;
-  lastSeen: number;
-}
+const rooms = new Map<string, ListeningRoom>();
 
-interface RoomState {
-  roomCode: string;
-  currentSong: any | null;
-  isPlaying: boolean;
-  currentTime: number;
-  lastUpdated: number;
-  hostUsername?: string;
-  participants?: Participant[];
-}
-
-const sessions = new Map<string, RoomState>();
-
-// Periodically clean up stale sessions (older than 10 minutes)
+// Clean up stale rooms (no activity for 20 minutes)
 setInterval(() => {
   const now = Date.now();
-  for (const [code, state] of sessions.entries()) {
-    if (now - state.lastUpdated > 10 * 60 * 1000) {
-      sessions.delete(code);
+  for (const [code, room] of rooms.entries()) {
+    if (now - room.updatedAt > 20 * 60 * 1000) {
+      rooms.delete(code);
     }
   }
 }, 5 * 60 * 1000);
 
-// GET /api/session - Retrieves a session state and registers/updates guest participant heartbeat
+// GET /api/session - Fetches active room state and refreshes participant heartbeat
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const roomCode = searchParams.get("roomCode")?.trim().toUpperCase();
@@ -37,42 +24,54 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Room code required" }, { status: 400 });
   }
 
-  const room = sessions.get(roomCode);
+  const room = rooms.get(roomCode);
   if (!room) {
     return NextResponse.json({ error: "Room not found or expired" }, { status: 404 });
   }
 
   const now = Date.now();
-  if (!room.participants) {
-    room.participants = [];
-  }
 
-  // If a username is querying the room, register/refresh them as active participant
+  // Register or refresh participant heartbeat
   if (username) {
     const existing = room.participants.find(
-      (p) => p.username.toLowerCase() === username.toLowerCase()
+      (p) => p.name.toLowerCase() === username.toLowerCase()
     );
     if (existing) {
-      existing.lastSeen = now;
+      existing.lastSeenAt = now;
+      existing.isOnline = true;
     } else {
-      room.participants.push({ username, lastSeen: now });
+      const isHost = room.hostId.toLowerCase() === username.toLowerCase();
+      const newParticipant: RoomParticipant = {
+        id: `p-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        name: username,
+        role: isHost ? "host" : "guest",
+        joinedAt: now,
+        lastSeenAt: now,
+        isOnline: true,
+      };
+      room.participants.push(newParticipant);
     }
   }
 
-  // Automatically clean up stale participants (not seen in the last 10 seconds)
-  room.participants = room.participants.filter((p) => now - p.lastSeen < 10000);
+  // Prune inactive participants (offline after 10s of no heartbeat)
+  room.participants = room.participants.map((p) => {
+    if (now - p.lastSeenAt > 10000) {
+      return { ...p, isOnline: false };
+    }
+    return p;
+  });
 
-  // Keep session alive while clients are active
-  room.lastUpdated = now;
+  // Keep room updated timestamp alive
+  room.updatedAt = now;
 
   return NextResponse.json(room);
 }
 
-// POST /api/session - Updates or creates a session state and host heartbeat
+// POST /api/session - Controls room mutations (create, sync, chat, reaction, queue, settings, votes)
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { roomCode, currentSong, isPlaying, currentTime, isCreate, username } = body;
+    const { roomCode, action, username } = body;
 
     const code = roomCode?.trim().toUpperCase();
     if (!code) {
@@ -81,66 +80,203 @@ export async function POST(request: Request) {
 
     const now = Date.now();
 
-    if (isCreate) {
-      // Create room with initial state and set host
+    // ACTION: CREATE
+    if (action === "create" || body.isCreate) {
+      const roomName = body.roomName || `Room ${code}`;
       const hostName = username?.trim() || "Host";
-      const newRoom: RoomState = {
-        roomCode: code,
-        currentSong: null,
-        isPlaying: false,
-        currentTime: 0,
-        lastUpdated: now,
-        hostUsername: hostName,
-        participants: [{ username: hostName, lastSeen: now }],
+
+      const newRoom: ListeningRoom = {
+        id: code,
+        name: roomName,
+        hostId: hostName,
+        createdAt: now,
+        updatedAt: now,
+        isPrivate: false,
+        inviteCode: code,
+        participants: [
+          {
+            id: "host-id",
+            name: hostName,
+            role: "host",
+            joinedAt: now,
+            lastSeenAt: now,
+            isOnline: true,
+          },
+        ],
+        queue: body.initialQueue || [],
+        currentTrack: body.currentTrack || null,
+        playbackState: {
+          status: "stopped",
+          positionMs: 0,
+          updatedAt: now,
+          controlledBy: hostName,
+        },
+        settings: {
+          allowGuestsToAddSongs: body.settings?.allowGuestsToAddSongs ?? true,
+          allowGuestsToVoteSkip: body.settings?.allowGuestsToVoteSkip ?? true,
+          allowGuestsToControlPlayback: body.settings?.allowGuestsToControlPlayback ?? false,
+          maxQueueSize: body.settings?.maxQueueSize ?? 50,
+          syncToleranceMs: body.settings?.syncToleranceMs ?? 4000,
+          chatEnabled: body.settings?.chatEnabled ?? true,
+          reactionsEnabled: body.settings?.reactionsEnabled ?? true,
+        },
+        chat: [],
+        reactions: [],
+        votes: [],
       };
-      sessions.set(code, newRoom);
+
+      rooms.set(code, newRoom);
       return NextResponse.json(newRoom);
     }
 
-    // Update existing room state
-    const room = sessions.get(code);
+    // Load active room
+    const room = rooms.get(code);
     if (!room) {
-      // If room is missing, auto-create it
-      const hostName = username?.trim() || "Host";
-      const autoRoom: RoomState = {
-        roomCode: code,
-        currentSong: currentSong || null,
-        isPlaying: isPlaying || false,
-        currentTime: currentTime || 0,
-        lastUpdated: now,
-        hostUsername: hostName,
-        participants: [{ username: hostName, lastSeen: now }],
-      };
-      sessions.set(code, autoRoom);
-      return NextResponse.json(autoRoom);
+      return NextResponse.json({ error: "Room not found or expired" }, { status: 404 });
     }
 
-    room.currentSong = currentSong || null;
-    room.isPlaying = isPlaying ?? false;
-    room.currentTime = currentTime || 0;
-    room.lastUpdated = now;
-
-    // Refresh Host heartbeat in the participants list
+    // Refresh sender presence
     if (username) {
-      if (!room.participants) room.participants = [];
-      const existing = room.participants.find(
-        (p) => p.username.toLowerCase() === username.toLowerCase()
-      );
+      const existing = room.participants.find((p) => p.name.toLowerCase() === username.toLowerCase());
       if (existing) {
-        existing.lastSeen = now;
-      } else {
-        room.participants.push({ username: username.trim(), lastSeen: now });
+        existing.lastSeenAt = now;
+        existing.isOnline = true;
       }
     }
 
-    // Filter out stale participants (> 10s)
-    if (room.participants) {
-      room.participants = room.participants.filter((p) => now - p.lastSeen < 10000);
+    room.updatedAt = now;
+
+    // ACTION: UPDATE PLAYBACK (Broadcasting host playback states)
+    if (action === "sync_playback") {
+      const { isPlaying, currentTime, currentSong, queue } = body;
+      room.playbackState.status = isPlaying ? "playing" : "paused";
+      room.playbackState.positionMs = currentTime || 0;
+      room.playbackState.updatedAt = now;
+      room.playbackState.controlledBy = username || room.hostId;
+      
+      if (currentSong) {
+        room.currentTrack = currentSong;
+      }
+      if (queue) {
+        room.queue = queue;
+      }
+      return NextResponse.json(room);
     }
+
+    // ACTION: CHAT MESSAGE
+    if (action === "chat") {
+      const { text } = body;
+      if (text && text.trim()) {
+        const newMessage: RoomChatMessage = {
+          id: `msg-${now}-${Math.floor(Math.random() * 1000)}`,
+          roomId: code,
+          senderId: username || "Guest",
+          senderName: username || "Guest",
+          text: text.trim(),
+          createdAt: now,
+        };
+        room.chat.push(newMessage);
+        if (room.chat.length > 50) {
+          room.chat.shift(); // Keep chat history concise
+        }
+      }
+      return NextResponse.json(room);
+    }
+
+    // ACTION: REACTION EMOJI
+    if (action === "reaction") {
+      const { emoji } = body;
+      if (emoji) {
+        const newReaction: RoomReaction = {
+          id: `react-${now}-${Math.floor(Math.random() * 1000)}`,
+          emoji,
+          senderName: username || "Anon",
+          timestamp: now,
+        };
+        room.reactions.push(newReaction);
+        if (room.reactions.length > 20) {
+          room.reactions.shift();
+        }
+      }
+      return NextResponse.json(room);
+    }
+
+    // ACTION: ADD TO QUEUE
+    if (action === "add_to_queue") {
+      const { song } = body;
+      if (song) {
+        // Prevent duplicates
+        const exists = room.queue.some((s) => s.id === song.id);
+        if (!exists && room.queue.length < room.settings.maxQueueSize) {
+          room.queue.push(song);
+        }
+      }
+      return NextResponse.json(room);
+    }
+
+    // ACTION: REMOVE FROM QUEUE
+    if (action === "remove_from_queue") {
+      const { videoId } = body;
+      if (videoId) {
+        room.queue = room.queue.filter((s) => s.id !== videoId);
+      }
+      return NextResponse.json(room);
+    }
+
+    // ACTION: REORDER QUEUE
+    if (action === "reorder_queue") {
+      const { queue } = body;
+      if (queue) {
+        room.queue = queue;
+      }
+      return NextResponse.json(room);
+    }
+
+    // ACTION: VOTE SKIP
+    if (action === "vote_skip") {
+      if (username) {
+        const index = room.votes.indexOf(username);
+        if (index > -1) {
+          room.votes.splice(index, 1); // Toggle vote off
+        } else {
+          room.votes.push(username); // Toggle vote on
+        }
+
+        // Check if vote-skip criteria is met (> 50% of active online participants)
+        const activeCount = room.participants.filter((p) => p.isOnline).length;
+        const requiredVotes = Math.ceil(activeCount * 0.5);
+        if (room.votes.length >= requiredVotes && requiredVotes > 0) {
+          // Clear votes list for the next song skip
+          room.votes = [];
+          return NextResponse.json({ ...room, triggerSkip: true });
+        }
+      }
+      return NextResponse.json(room);
+    }
+
+    // ACTION: UPDATE ROOM SETTINGS
+    if (action === "update_settings") {
+      const { settings } = body;
+      if (settings) {
+        room.settings = {
+          ...room.settings,
+          ...settings,
+        };
+      }
+      return NextResponse.json(room);
+    }
+
+    // Default: Fallback Host state update
+    const { currentSong, isPlaying, currentTime } = body;
+    room.currentTrack = currentSong || room.currentTrack;
+    room.playbackState.status = isPlaying ? "playing" : "paused";
+    room.playbackState.positionMs = currentTime ?? room.playbackState.positionMs;
+    room.playbackState.updatedAt = now;
 
     return NextResponse.json(room);
   } catch (err: any) {
-    return NextResponse.json({ error: "Invalid body data: " + err.message }, { status: 400 });
+    console.error("Session update error:", err);
+    return NextResponse.json({ error: "Server sync fail: " + err.message }, { status: 400 });
   }
 }
 export const dynamic = "force-dynamic";

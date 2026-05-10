@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { useSyncStore } from "@/store/useSyncStore";
+import { useRoomStore } from "@/store/useRoomStore";
 import { usePlayerStore } from "@/store/usePlayerStore";
+import { useQueueStore } from "@/store/useQueueStore";
 
 export default function YTPlayerSyncManager() {
-  const { roomCode, role, isConnected, disconnectRoom, username, setParticipants } = useSyncStore();
+  const { roomCode, role, isConnected, disconnectRoom, username, setRoom } = useRoomStore();
   const { currentSong, isPlaying, currentTime, playSong, seekTo } = usePlayerStore();
+  const { queue, setQueue } = useQueueStore();
 
   const isUpdatingRef = useRef<boolean>(false);
   const lastSongChangeTimestamp = useRef<number>(0);
@@ -19,7 +21,7 @@ export default function YTPlayerSyncManager() {
       isUpdatingRef.current = true;
 
       try {
-        const currentUsername = useSyncStore.getState().username || "User";
+        const currentUsername = useRoomStore.getState().username || "User";
 
         if (role === "host") {
           // Host sends current player state and username heartbeat to the API
@@ -28,19 +30,18 @@ export default function YTPlayerSyncManager() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               roomCode,
+              action: "sync_playback",
               currentSong,
               isPlaying,
               currentTime,
               username: currentUsername,
+              queue, // Keep room's queue in sync with Host's queue
             }),
           });
 
           if (res.ok) {
             const data = await res.json();
-            if (data.participants) {
-              const names = data.participants.map((p: any) => p.username);
-              setParticipants(names);
-            }
+            setRoom(data); // Sync room context in store
           }
         } else if (role === "guest") {
           // Guest polls for the host's player state and updates heartbeat
@@ -50,21 +51,35 @@ export default function YTPlayerSyncManager() {
           
           if (res.ok) {
             const data = await res.json();
+            setRoom(data); // Sync room context in store
 
-            // Sync participant list
-            if (data.participants) {
-              const names = data.participants.map((p: any) => p.username);
-              setParticipants(names);
-            }
-            
             // 1. Sync active song track
             let trackChanged = false;
-            if (data.currentSong) {
+            if (data.currentTrack) {
               const localSong = usePlayerStore.getState().currentSong;
-              if (!localSong || localSong.id !== data.currentSong.id) {
-                playSong(data.currentSong);
+              if (!localSong || localSong.id !== data.currentTrack.id) {
+                playSong(data.currentTrack);
                 lastSongChangeTimestamp.current = Date.now();
                 trackChanged = true;
+              }
+            } else {
+              // No track is playing on Host
+              const localSong = usePlayerStore.getState().currentSong;
+              if (localSong) {
+                usePlayerStore.setState({ currentSong: null, isPlaying: false });
+              }
+            }
+
+            // 2. Sync Local Queue with Room Queue
+            if (data.queue) {
+              const localQueue = useQueueStore.getState().queue;
+              const queueDiffers =
+                localQueue.length !== data.queue.length ||
+                localQueue.some((item, idx) => item.id !== data.queue[idx]?.id);
+
+              if (queueDiffers) {
+                // Silently update the local queue items without triggering playSong
+                useQueueStore.setState({ queue: data.queue });
               }
             }
 
@@ -74,27 +89,30 @@ export default function YTPlayerSyncManager() {
             const localIsBuffering = usePlayerStore.getState().isBuffering;
 
             if (!trackChanged && !isWithinCooldown && !localIsBuffering) {
-              // 2. Sync play/pause controls
+              const targetPlayingState = data.playbackState?.status === "playing";
+
+              // 3. Sync play/pause controls
               const localIsPlaying = usePlayerStore.getState().isPlaying;
-              if (data.isPlaying !== localIsPlaying) {
+              if (targetPlayingState !== localIsPlaying) {
                 const player = usePlayerStore.getState().playerInstance;
                 if (player) {
-                  if (data.isPlaying && typeof player.playVideo === "function") {
+                  if (targetPlayingState && typeof player.playVideo === "function") {
                     player.playVideo();
                     usePlayerStore.setState({ isPlaying: true });
-                  } else if (!data.isPlaying && typeof player.pauseVideo === "function") {
+                  } else if (!targetPlayingState && typeof player.pauseVideo === "function") {
                     player.pauseVideo();
                     usePlayerStore.setState({ isPlaying: false });
                   }
                 } else {
-                  usePlayerStore.setState({ isPlaying: data.isPlaying });
+                  usePlayerStore.setState({ isPlaying: targetPlayingState });
                 }
               }
 
-              // 3. Sync progress time (allow 4.0s jitter margin for stable sync)
+              // 4. Sync progress time (allow 4.5s jitter margin for stable sync)
               const localTime = usePlayerStore.getState().currentTime;
-              if (Math.abs(data.currentTime - localTime) > 4.0) {
-                seekTo(data.currentTime);
+              const targetPosition = data.playbackState?.positionMs || 0;
+              if (Math.abs(targetPosition - localTime) > 4.5) {
+                seekTo(targetPosition);
               }
             }
           } else if (res.status === 404) {
@@ -110,7 +128,7 @@ export default function YTPlayerSyncManager() {
     }, 1500);
 
     return () => clearInterval(interval);
-  }, [isConnected, roomCode, role, currentSong, isPlaying, currentTime, playSong, seekTo, disconnectRoom, username, setParticipants]);
+  }, [isConnected, roomCode, role, currentSong, isPlaying, currentTime, queue, playSong, seekTo, disconnectRoom, username, setRoom, setQueue]);
 
   return null; // Silent synchronization manager
 }
