@@ -110,6 +110,7 @@ export async function POST(request: Request) {
           positionMs: 0,
           updatedAt: now,
           controlledBy: hostName,
+          revision: 0,
         },
         settings: {
           allowGuestsToAddSongs: body.settings?.allowGuestsToAddSongs ?? true,
@@ -123,6 +124,7 @@ export async function POST(request: Request) {
         chat: [],
         reactions: [],
         votes: [],
+        queueRevision: 0,
       };
 
       rooms.set(code, newRoom);
@@ -149,7 +151,13 @@ export async function POST(request: Request) {
     // ACTION: UPDATE PLAYBACK (Broadcasting host playback states)
     if (action === "sync_playback") {
       const { isPlaying, currentTime, currentSong, queue } = body;
-      room.playbackState.status = isPlaying ? "playing" : "paused";
+      const targetStatus = isPlaying ? "playing" : "paused";
+      
+      const statusChanged = room.playbackState.status !== targetStatus;
+      const trackChanged = currentSong && (!room.currentTrack || room.currentTrack.id !== currentSong.id);
+      const seeked = currentTime !== undefined && Math.abs((room.playbackState.positionMs || 0) - currentTime) > 4.0;
+
+      room.playbackState.status = targetStatus;
       room.playbackState.positionMs = currentTime || 0;
       room.playbackState.updatedAt = now;
       room.playbackState.controlledBy = username || room.hostId;
@@ -157,8 +165,17 @@ export async function POST(request: Request) {
       if (currentSong) {
         room.currentTrack = currentSong;
       }
+      
+      if (statusChanged || trackChanged || seeked) {
+        room.playbackState.revision = (room.playbackState.revision || 0) + 1;
+      }
+
       if (queue) {
-        room.queue = queue;
+        const queueChanged = room.queue.length !== queue.length || room.queue.some((s, idx) => s.id !== queue[idx]?.id);
+        if (queueChanged) {
+          room.queue = queue;
+          room.queueRevision = (room.queueRevision || 0) + 1;
+        }
       }
       return NextResponse.json(room);
     }
@@ -177,7 +194,7 @@ export async function POST(request: Request) {
         };
         room.chat.push(newMessage);
         if (room.chat.length > 50) {
-          room.chat.shift(); // Keep chat history concise
+          room.chat.shift();
         }
       }
       return NextResponse.json(room);
@@ -205,10 +222,10 @@ export async function POST(request: Request) {
     if (action === "add_to_queue") {
       const { song } = body;
       if (song) {
-        // Prevent duplicates
         const exists = room.queue.some((s) => s.id === song.id);
         if (!exists && room.queue.length < room.settings.maxQueueSize) {
           room.queue.push(song);
+          room.queueRevision = (room.queueRevision || 0) + 1;
         }
       }
       return NextResponse.json(room);
@@ -218,7 +235,11 @@ export async function POST(request: Request) {
     if (action === "remove_from_queue") {
       const { videoId } = body;
       if (videoId) {
+        const originalLength = room.queue.length;
         room.queue = room.queue.filter((s) => s.id !== videoId);
+        if (room.queue.length !== originalLength) {
+          room.queueRevision = (room.queueRevision || 0) + 1;
+        }
       }
       return NextResponse.json(room);
     }
@@ -228,6 +249,7 @@ export async function POST(request: Request) {
       const { queue } = body;
       if (queue) {
         room.queue = queue;
+        room.queueRevision = (room.queueRevision || 0) + 1;
       }
       return NextResponse.json(room);
     }
@@ -237,17 +259,16 @@ export async function POST(request: Request) {
       if (username) {
         const index = room.votes.indexOf(username);
         if (index > -1) {
-          room.votes.splice(index, 1); // Toggle vote off
+          room.votes.splice(index, 1);
         } else {
-          room.votes.push(username); // Toggle vote on
+          room.votes.push(username);
         }
 
-        // Check if vote-skip criteria is met (> 50% of active online participants)
         const activeCount = room.participants.filter((p) => p.isOnline).length;
         const requiredVotes = Math.ceil(activeCount * 0.5);
         if (room.votes.length >= requiredVotes && requiredVotes > 0) {
-          // Clear votes list for the next song skip
           room.votes = [];
+          room.playbackState.revision = (room.playbackState.revision || 0) + 1;
           return NextResponse.json({ ...room, triggerSkip: true });
         }
       }

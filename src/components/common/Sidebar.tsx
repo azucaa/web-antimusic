@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
+import { SafeImage as Image } from "./SafeImage";
 import { useState } from "react";
 import { usePathname } from "next/navigation";
 import { Home, Search, Users, Library, BarChart3, Settings, ShieldAlert, Heart, Disc, User } from "lucide-react";
 import { useSettingsStore } from "@/store/useSettingsStore";
 import { useLibraryStore } from "@/store/useLibraryStore";
+import { useRoomStore } from "@/store/useRoomStore";
 import { ArtistDetailSheet, AlbumDetailSheet } from "../search/DetailSheets";
 
 const NAV_ITEMS = [
@@ -22,6 +23,7 @@ export default function Sidebar() {
   const pathname = usePathname();
   const { privateSession, antiAlgorithmMode } = useSettingsStore();
   const { savedArtists, savedAlbums } = useLibraryStore();
+  const { isConnected, room } = useRoomStore();
 
   const [activeArtistId, setActiveArtistId] = useState<string | null>(null);
   const [activeAlbumId, setActiveAlbumId] = useState<string | null>(null);
@@ -51,24 +53,29 @@ export default function Sidebar() {
           {NAV_ITEMS.map((item) => {
             const Icon = item.icon;
             const isActive = pathname === item.href;
+            const isTogether = item.label === "Dengar Bersama";
+            const showLiveDot = isTogether && isConnected && room;
 
             return (
               <Link
                 key={item.href}
                 href={item.href}
-                className={`flex items-center gap-3.5 px-3 py-2.5 rounded-xl transition-all duration-200 group text-xs font-bold ${
+                className={`flex items-center gap-3.5 px-3.5 py-3 rounded-2xl transition-all duration-300 group text-xs font-bold relative overflow-hidden ${
                   isActive
-                    ? "bg-[#ff004f]/10 text-white border-l-4 border-[#ff004f] pl-2.5"
-                    : "text-muted-foreground hover:text-white hover:bg-white/5"
+                    ? "bg-gradient-to-r from-[#ff004f]/15 to-[#ff004f]/2 text-white border-l-4 border-[#ff004f] pl-3 shadow-[0_4px_24px_rgba(255,0,79,0.12)]"
+                    : "text-muted-foreground hover:text-white hover:bg-white/5 hover:translate-x-1"
                 }`}
               >
                 <Icon
                   size={18}
-                  className={`transition-transform duration-200 group-hover:scale-105 ${
-                    isActive ? "text-[#ff004f]" : "text-muted-foreground"
+                  className={`transition-all duration-300 group-hover:scale-110 ${
+                    isActive ? "text-[#ff004f] drop-shadow-[0_0_8px_#ff004f]" : "text-muted-foreground group-hover:text-white"
                   }`}
                 />
-                <span>{item.label}</span>
+                <span className="flex-1">{item.label}</span>
+                {showLiveDot && (
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 border border-emerald-500 shadow-[0_0_8px_rgba(52,211,153,0.8)] animate-pulse" />
+                )}
               </Link>
             );
           })}

@@ -7,6 +7,7 @@ import { useQueueStore } from "@/store/useQueueStore";
 import { useRadioStore } from "@/store/useRadioStore";
 import { useRoomStore } from "@/store/useRoomStore";
 import { useLibraryStore } from "@/store/useLibraryStore";
+import { useUIStore } from "@/store/useUIStore";
 import { useRouter } from "next/navigation";
 import { 
   Play, Radio, Users, Plus, Star, Link2, Music, Check, MoreVertical
@@ -29,13 +30,14 @@ export default function ContextMenu({
   const [isOpen, setIsOpen] = useState(false);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isCopied, setIsCopied] = useState(false);
+  const [showPlaylistSubmenu, setShowPlaylistSubmenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   const { playSong } = usePlayerStore();
   const { addToQueue, addToQueueNext } = useQueueStore();
   const { startRadio } = useRadioStore();
   const { isConnected, addTrackToRoomQueue } = useRoomStore();
-  const { toggleFavorite, playlists } = useLibraryStore();
+  const { toggleFavorite, playlists, createPlaylist, addSongToPlaylist } = useLibraryStore();
 
   const isLiked = playlists.find(p => p.id === "liked")?.songs.some(s => s.id === song.id) || false;
 
@@ -199,6 +201,17 @@ export default function ContextMenu({
             </button>
 
             <button
+              onClick={() => {
+                useUIStore.getState().setSongForPlaylistModal(song);
+                setIsOpen(false);
+              }}
+              className="w-full flex items-center gap-3 px-3.5 py-2.5 hover:bg-white/10 text-left cursor-pointer text-white/90"
+            >
+              <Plus size={14} className="text-[#ff004f]" />
+              <span>Tambah ke Playlist</span>
+            </button>
+
+            <button
               onClick={handleStartRadio}
               className="w-full flex items-center gap-3 px-3.5 py-2.5 hover:bg-white/10 text-left cursor-pointer text-white/90"
             >
@@ -207,7 +220,10 @@ export default function ContextMenu({
             </button>
 
             <button
-              onClick={handleListenTogether}
+              onClick={() => {
+                useUIStore.getState().setSongForTogetherModal(song);
+                setIsOpen(false);
+              }}
               className="w-full flex items-center gap-3 px-3.5 py-2.5 hover:bg-white/10 text-left cursor-pointer text-white/90"
             >
               <Users size={14} className="text-[#ff004f]" />

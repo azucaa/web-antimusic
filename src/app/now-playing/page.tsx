@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { usePlayerStore } from "@/store/usePlayerStore";
 import { useQueueStore } from "@/store/useQueueStore";
-import Image from "next/image";
+import { SafeImage as Image } from "@/components/common/SafeImage";
 import Link from "next/link";
 import { 
   ArrowLeft, Play, Pause, SkipForward, SkipBack, Volume2, Music, Loader2, Disc, Heart, Repeat, Shuffle 

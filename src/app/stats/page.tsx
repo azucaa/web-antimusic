@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Image from "next/image";
+import { SafeImage as Image } from "@/components/common/SafeImage";
 import Link from "next/link";
 import { useLibraryStore } from "@/store/useLibraryStore";
 import { 

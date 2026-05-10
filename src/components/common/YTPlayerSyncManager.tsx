@@ -8,23 +8,31 @@ import { useQueueStore } from "@/store/useQueueStore";
 export default function YTPlayerSyncManager() {
   const { roomCode, role, isConnected, disconnectRoom, username, setRoom } = useRoomStore();
   const { currentSong, isPlaying, currentTime, playSong, seekTo } = usePlayerStore();
-  const { queue, setQueue } = useQueueStore();
+  const { queue } = useQueueStore();
 
   const isUpdatingRef = useRef<boolean>(false);
   const lastSongChangeTimestamp = useRef<number>(0);
+  const lastHostStateRef = useRef<{ isPlaying: boolean; songId: string | null }>({
+    isPlaying: false,
+    songId: null,
+  });
 
+  // 1. FAST-PATH HOST BROADCAST
+  // Whenever the Host performs a discrete action (play/pause or song change), 
+  // they instantly notify the API to update the session.
   useEffect(() => {
-    if (!isConnected || !roomCode) return;
+    if (!isConnected || !roomCode || role !== "host") return;
 
-    const interval = setInterval(async () => {
-      if (isUpdatingRef.current) return;
-      isUpdatingRef.current = true;
+    const currentSongId = currentSong?.id || null;
+    const isPlayingChanged = lastHostStateRef.current.isPlaying !== isPlaying;
+    const songIdChanged = lastHostStateRef.current.songId !== currentSongId;
 
-      try {
-        const currentUsername = useRoomStore.getState().username || "User";
+    if (isPlayingChanged || songIdChanged) {
+      lastHostStateRef.current = { isPlaying, songId: currentSongId };
 
-        if (role === "host") {
-          // Host sends current player state and username heartbeat to the API
+      const broadcastState = async () => {
+        try {
+          const currentUsername = useRoomStore.getState().username || "User";
           const res = await fetch("/api/session", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -35,25 +43,67 @@ export default function YTPlayerSyncManager() {
               isPlaying,
               currentTime,
               username: currentUsername,
-              queue, // Keep room's queue in sync with Host's queue
+              queue,
+            }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            setRoom(data);
+          }
+        } catch (err) {
+          console.error("Listening Together instant host broadcast error:", err);
+        }
+      };
+
+      broadcastState();
+    }
+  }, [isConnected, roomCode, role, isPlaying, currentSong, currentTime, queue, setRoom]);
+
+  // 2. PERIODIC POLLING / HEARTBEAT INTERVAL
+  // Runs every 1000ms for Guest, and 1500ms for Host.
+  useEffect(() => {
+    if (!isConnected || !roomCode) return;
+
+    const intervalTime = role === "guest" ? 1000 : 1500;
+
+    const interval = setInterval(async () => {
+      if (isUpdatingRef.current) return;
+      isUpdatingRef.current = true;
+
+      try {
+        const currentUsername = useRoomStore.getState().username || "User";
+
+        if (role === "host") {
+          // Host reports active playback position and heartbeat to server
+          const res = await fetch("/api/session", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              roomCode,
+              action: "sync_playback",
+              currentSong,
+              isPlaying,
+              currentTime,
+              username: currentUsername,
+              queue,
             }),
           });
 
           if (res.ok) {
             const data = await res.json();
-            setRoom(data); // Sync room context in store
+            setRoom(data);
           }
         } else if (role === "guest") {
-          // Guest polls for the host's player state and updates heartbeat
+          // Guest polls for Host's exact playback state and reports heartbeat
           const res = await fetch(
             `/api/session?roomCode=${roomCode}&username=${encodeURIComponent(currentUsername)}`
           );
-          
+
           if (res.ok) {
             const data = await res.json();
-            setRoom(data); // Sync room context in store
+            setRoom(data);
 
-            // 1. Sync active song track
+            // A. Sync active track
             let trackChanged = false;
             if (data.currentTrack) {
               const localSong = usePlayerStore.getState().currentSong;
@@ -63,14 +113,13 @@ export default function YTPlayerSyncManager() {
                 trackChanged = true;
               }
             } else {
-              // No track is playing on Host
               const localSong = usePlayerStore.getState().currentSong;
               if (localSong) {
                 usePlayerStore.setState({ currentSong: null, isPlaying: false });
               }
             }
 
-            // 2. Sync Local Queue with Room Queue
+            // B. Sync local queue items
             if (data.queue) {
               const localQueue = useQueueStore.getState().queue;
               const queueDiffers =
@@ -78,57 +127,59 @@ export default function YTPlayerSyncManager() {
                 localQueue.some((item, idx) => item.id !== data.queue[idx]?.id);
 
               if (queueDiffers) {
-                // Silently update the local queue items without triggering playSong
                 useQueueStore.setState({ queue: data.queue });
               }
             }
 
-            // If we just loaded a new song, wait for it to buffer and settle before syncing positions
+            // Cooldown and player states
             const timeSinceChange = Date.now() - lastSongChangeTimestamp.current;
             const isWithinCooldown = timeSinceChange < 4500;
             const localIsBuffering = usePlayerStore.getState().isBuffering;
 
-            if (!trackChanged && !isWithinCooldown && !localIsBuffering) {
-              const targetPlayingState = data.playbackState?.status === "playing";
+            const targetPlayingState = data.playbackState?.status === "playing";
+            const localIsPlaying = usePlayerStore.getState().isPlaying;
 
-              // 3. Sync play/pause controls
-              const localIsPlaying = usePlayerStore.getState().isPlaying;
-              if (targetPlayingState !== localIsPlaying) {
-                const player = usePlayerStore.getState().playerInstance;
-                if (player) {
-                  if (targetPlayingState && typeof player.playVideo === "function") {
-                    player.playVideo();
-                    usePlayerStore.setState({ isPlaying: true });
-                  } else if (!targetPlayingState && typeof player.pauseVideo === "function") {
-                    player.pauseVideo();
-                    usePlayerStore.setState({ isPlaying: false });
-                  }
-                } else {
-                  usePlayerStore.setState({ isPlaying: targetPlayingState });
-                }
+            // C. Sync Play/Pause Controls
+            // Priority 1: Host is PAUSED -> Guest must pause immediately, bypassing cooldown!
+            if (!targetPlayingState && localIsPlaying) {
+              const player = usePlayerStore.getState().playerInstance;
+              if (player && typeof player.pauseVideo === "function") {
+                player.pauseVideo();
               }
+              usePlayerStore.setState({ isPlaying: false });
+            } 
+            // Priority 2: Host is PLAYING -> Guest is paused -> Sync if guest is not buffering/cooldown-locked
+            else if (targetPlayingState && !localIsPlaying && !isWithinCooldown && !localIsBuffering) {
+              const player = usePlayerStore.getState().playerInstance;
+              if (player && typeof player.playVideo === "function") {
+                player.playVideo();
+              }
+              usePlayerStore.setState({ isPlaying: true });
+            }
 
-              // 4. Sync progress time (allow 4.5s jitter margin for stable sync)
+            // D. Sync Progress Time (with jitter buffer filter)
+            // Allow 3.5s jitter margin for highly stable playback alignment
+            if (!trackChanged && !isWithinCooldown && !localIsBuffering && targetPlayingState) {
               const localTime = usePlayerStore.getState().currentTime;
               const targetPosition = data.playbackState?.positionMs || 0;
-              if (Math.abs(targetPosition - localTime) > 4.5) {
+              if (Math.abs(targetPosition - localTime) > 3.5) {
                 seekTo(targetPosition);
               }
             }
           } else if (res.status === 404) {
-            // Room no longer exists or expired
+            // Sesi kamar ditutup atau kadaluwarsa
             disconnectRoom();
           }
         }
       } catch (err) {
-        console.error("Listening Together sync error:", err);
+        console.error("Listening Together sync interval error:", err);
       } finally {
         isUpdatingRef.current = false;
       }
-    }, 1500);
+    }, intervalTime);
 
     return () => clearInterval(interval);
-  }, [isConnected, roomCode, role, currentSong, isPlaying, currentTime, queue, playSong, seekTo, disconnectRoom, username, setRoom, setQueue]);
+  }, [isConnected, roomCode, role, currentSong, isPlaying, currentTime, queue, playSong, seekTo, disconnectRoom, setRoom]);
 
-  return null; // Silent synchronization manager
+  return null; // Silent synchronizer manager
 }

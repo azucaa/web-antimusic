@@ -6,7 +6,7 @@ import { useRadioStore } from "@/store/useRadioStore";
 import { usePlayerStore } from "@/store/usePlayerStore";
 import { useQueueStore } from "@/store/useQueueStore";
 import { useRoomStore } from "@/store/useRoomStore";
-import Image from "next/image";
+import { SafeImage as Image } from "@/components/common/SafeImage";
 import Link from "next/link";
 import { 
   Radio, Sparkles, Compass, User, Disc, Play, Star, Users, Loader2, ArrowLeft, ArrowRight, ShieldCheck, MoreVertical

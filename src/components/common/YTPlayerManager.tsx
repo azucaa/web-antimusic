@@ -5,6 +5,7 @@ import { usePlayerStore } from "@/store/usePlayerStore";
 import { useQueueStore } from "@/store/useQueueStore";
 import { useLibraryStore } from "@/store/useLibraryStore";
 import { useSyncStore } from "@/store/useSyncStore";
+import { useRoomStore } from "@/store/useRoomStore";
 
 declare global {
   interface Window {
@@ -191,7 +192,9 @@ export default function YTPlayerManager() {
             }
 
             // Play next track in queue ONLY if NOT a connected Guest
-            const isGuest = useSyncStore.getState().isConnected && useSyncStore.getState().role === "guest";
+            const isGuest = 
+              (useSyncStore.getState().isConnected && useSyncStore.getState().role === "guest") ||
+              (useRoomStore.getState().isConnected && useRoomStore.getState().role === "guest");
             if (!isGuest) {
               nextSong();
             }
@@ -201,7 +204,9 @@ export default function YTPlayerManager() {
           console.error("YouTube Player error:", event.data);
           setIsBuffering(false);
           // Skip on error ONLY if NOT a connected Guest
-          const isGuest = useSyncStore.getState().isConnected && useSyncStore.getState().role === "guest";
+          const isGuest = 
+            (useSyncStore.getState().isConnected && useSyncStore.getState().role === "guest") ||
+            (useRoomStore.getState().isConnected && useRoomStore.getState().role === "guest");
           if (!isGuest) {
             nextSong();
           }

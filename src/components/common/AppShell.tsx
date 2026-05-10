@@ -3,11 +3,15 @@
 import { ReactNode } from "react";
 import Sidebar from "./Sidebar";
 import BottomNavbar from "./BottomNavbar";
+import RightMusicPanel from "../layout/RightMusicPanel";
 import MiniPlayer from "../player/MiniPlayer";
 import YTPlayerManager from "./YTPlayerManager";
 import YTPlayerSyncManager from "./YTPlayerSyncManager";
 import { useSettingsStore } from "@/store/useSettingsStore";
 import { useUIStore } from "@/store/useUIStore";
+import ToastContainer from "./Toast";
+import AddToPlaylistDialog from "../playlist/AddToPlaylistDialog";
+import AddToTogetherDialog from "../together/AddToTogetherDialog";
 import { AlbumDetailSheet, ArtistDetailSheet, PlaylistDetailSheet } from "@/components/search/DetailSheets";
 
 interface AppShellProps {
@@ -18,7 +22,10 @@ export default function AppShell({ children }: AppShellProps) {
   const { theme } = useSettingsStore();
   const { 
     selectedAlbumId, selectedArtistId, selectedPlaylistId,
-    setSelectedAlbumId, setSelectedArtistId, setSelectedPlaylistId
+    songForPlaylistModal, songForTogetherModal,
+    isRightPanelOpen,
+    setSelectedAlbumId, setSelectedArtistId, setSelectedPlaylistId,
+    setSongForPlaylistModal, setSongForTogetherModal
   } = useUIStore();
 
   return (
@@ -29,9 +36,10 @@ export default function AppShell({ children }: AppShellProps) {
 
       {/* 2. Sidebar Navigation (Visible on Desktop) */}
       <Sidebar />
+      {isRightPanelOpen && <RightMusicPanel />}
 
       {/* 3. Main Content Scroll Area */}
-      <main className="min-h-screen md:pl-64 pb-36 md:pb-24">
+      <main className={`min-h-screen md:pl-64 ${isRightPanelOpen ? "xl:pr-80" : "xl:pr-0"} pb-44 md:pb-32 transition-all duration-300`}>
         <div className="p-4 md:p-8 max-w-7xl mx-auto">
           {children}
         </div>
@@ -53,6 +61,15 @@ export default function AppShell({ children }: AppShellProps) {
       {selectedPlaylistId && (
         <PlaylistDetailSheet id={selectedPlaylistId} onClose={() => setSelectedPlaylistId(null)} />
       )}
+      {songForPlaylistModal && (
+        <AddToPlaylistDialog song={songForPlaylistModal} onClose={() => setSongForPlaylistModal(null)} />
+      )}
+      {songForTogetherModal && (
+        <AddToTogetherDialog song={songForTogetherModal} onClose={() => setSongForTogetherModal(null)} />
+      )}
+
+      {/* 7. Global Toast Notifications Container */}
+      <ToastContainer />
     </div>
   );
 }

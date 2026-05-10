@@ -20,6 +20,7 @@ export interface RoomPlaybackState {
   startedAt?: number;
   updatedAt: number;
   controlledBy: string;
+  revision: number; // Increment on every playback state change
 }
 
 export interface RoomSettings {
@@ -64,4 +65,5 @@ export interface ListeningRoom {
   chat: RoomChatMessage[];
   reactions: RoomReaction[];
   votes: string[]; // usernames that voted to skip
+  queueRevision: number; // Increment on every queue mutation
 }

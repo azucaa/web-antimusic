@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useRoomStore } from "@/store/useRoomStore";
 import { usePlayerStore } from "@/store/usePlayerStore";
 import { useQueueStore } from "@/store/useQueueStore";
-import Image from "next/image";
+import { SafeImage as Image } from "@/components/common/SafeImage";
 import { 
   Users, Radio, MessageSquare, ListMusic, Settings, LogOut, Send, 
   Smile, Flame, ThumbsUp, Heart, Sparkles, Star, Trash2, Shield, Plus, Loader2, Play, Pause, ChevronRight

@@ -2,15 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import Image from "next/image";
+import { SafeImage as Image } from "@/components/common/SafeImage";
 import Link from "next/link";
 import { usePlayerStore } from "@/store/usePlayerStore";
 import { useLibraryStore } from "@/store/useLibraryStore";
 import { useQueueStore } from "@/store/useQueueStore";
 import { useUIStore } from "@/store/useUIStore";
+import { useToastStore } from "@/store/useToastStore";
 import { Song } from "@/types/music";
 import { 
-  Play, Clock, Disc, Sparkles, Loader2, Music2, Flame, Library, MoreVertical, Users
+  Play, Clock, Disc, Sparkles, Loader2, Music2, Flame, Library, 
+  MoreVertical, Search, User, ArrowRight, Compass, Heart, Plus
 } from "lucide-react";
 import GreetingHeader from "@/components/home/GreetingHeader";
 import AntiMusicFlowSection from "@/components/home/AntiMusicFlowSection";
@@ -27,46 +29,29 @@ interface CategoryPill {
 const CATEGORIES: CategoryPill[] = [
   { id: "all", label: "Pilihan Utama", query: "trending indonesian hits 2026", icon: Sparkles, color: "from-[#ff004f] to-purple-600" },
   { id: "energize", label: "Penuh Energi", query: "edm electropop festival", icon: Flame, color: "from-amber-500 to-red-500" },
-  { id: "relax", label: "Santai", query: "acoustic chill cafe sunset", icon: WindIcon, color: "from-green-500 to-teal-500" },
+  { id: "relax", label: "Santai", query: "acoustic chill cafe sunset", icon: Disc, color: "from-green-500 to-teal-500" },
   { id: "focus", label: "Fokus", query: "lofi hip hop study beat coding", icon: Disc, color: "from-indigo-500 to-blue-500" },
-  { id: "commute", label: "Perjalanan", query: "indie folk roadtrip travel", icon: Music2, color: "from-cyan-500 to-sky-500" },
 ];
 
-function WindIcon(props: any) {
-  return (
-    <svg
-      {...props}
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M17.7 7.7a2.5 2.5 0 1 1 1.8 4.3H2" />
-      <path d="M9.6 4.6A2 2 0 1 1 11 8H2" />
-      <path d="M12.6 19.4A2 2 0 1 0 14 16H2" />
-    </svg>
-  );
-}
+const MOCK_POPULAR_ARTISTS = [
+  { id: "art-1", title: "Tulus", thumbnail: "https://lh3.googleusercontent.com/a-/ALV-UHV1gYyvY_pB7q8P_6X1zY6-b4o4a7w6a7w6a7w" },
+  { id: "art-2", title: "Coldplay", thumbnail: "https://lh3.googleusercontent.com/a-/ALV-UHV1gYyvY_pB7q8P_6X1zY6-b4o4a7w6a7w6a7w" },
+  { id: "art-3", title: "Hindia", thumbnail: "https://lh3.googleusercontent.com/a-/ALV-UHV1gYyvY_pB7q8P_6X1zY6-b4o4a7w6a7w6a7w" },
+  { id: "art-4", title: "Nadin Amizah", thumbnail: "https://lh3.googleusercontent.com/a-/ALV-UHV1gYyvY_pB7q8P_6X1zY6-b4o4a7w6a7w6a7w" },
+];
 
 export default function Home() {
   const router = useRouter();
   const [activeCategoryId, setActiveCategoryId] = useState("all");
   const [quickPicks, setQuickPicks] = useState<Song[]>([]);
   const [loadingQuickPicks, setLoadingQuickPicks] = useState(true);
-  
-  const [trendingAlbums, setTrendingAlbums] = useState<any[]>([]);
-  const [loadingAlbums, setLoadingAlbums] = useState(true);
-
   const [isMounted, setIsMounted] = useState(false);
+  
   const { currentSong, isPlaying, playSong } = usePlayerStore();
   const { history, playlists, savedArtists } = useLibraryStore();
-  const { setQueue } = useQueueStore();
+  const { setQueue, addToQueue } = useQueueStore();
   const { setSelectedArtistId, setSelectedAlbumId } = useUIStore();
+  const { addToast } = useToastStore();
 
   useEffect(() => {
     setIsMounted(true);
@@ -81,7 +66,7 @@ export default function Home() {
         const res = await fetch(`/api/search?q=${encodeURIComponent(cat.query)}`);
         if (!res.ok) throw new Error();
         const json = await res.json();
-        setQuickPicks((json.songs || []).slice(0, 8));
+        setQuickPicks((json.songs || []).slice(0, 6));
       } catch (err) {
         console.error("Failed loading Quick Picks", err);
       } finally {
@@ -94,34 +79,33 @@ export default function Home() {
     }
   }, [activeCategoryId, isMounted]);
 
-  // Fetch popular search terms for albums
-  useEffect(() => {
-    const fetchTrendingAlbums = async () => {
-      try {
-        const res = await fetch(`/api/search?q=hit+album+viral`);
-        if (!res.ok) throw new Error();
-        const json = await res.json();
-        setTrendingAlbums((json.albums || []).slice(0, 6));
-      } catch (err) {
-        console.error("Failed loading albums", err);
-      } finally {
-        setLoadingAlbums(false);
-      }
-    };
-
-    if (isMounted) {
-      fetchTrendingAlbums();
-    }
-  }, [isMounted]);
-
   const handlePlaySong = (song: Song, index: number, shelfSongs: Song[]) => {
     playSong(song);
     setQueue(shelfSongs, index);
+    addToast(`Memutar "${song.title}"`, "success");
   };
 
   const handlePlaySingle = (song: Song) => {
     playSong(song);
     setQueue([song], 0);
+    addToast(`Memutar "${song.title}"`, "success");
+  };
+
+  const handlePlayMidnightDrive = async () => {
+    addToast("Menyiapkan Midnight Drive Mix...", "info");
+    try {
+      const res = await fetch(`/api/search?q=synthwave+retro+lofi+night+drive`);
+      if (!res.ok) throw new Error();
+      const json = await res.json();
+      const songs = json.songs || [];
+      if (songs.length > 0) {
+        playSong(songs[0]);
+        setQueue(songs, 0);
+        addToast("Midnight Drive Mix Diputar!", "success");
+      }
+    } catch {
+      addToast("Gagal memuat Midnight Drive Mix.", "error");
+    }
   };
 
   if (!isMounted) {
@@ -132,13 +116,87 @@ export default function Home() {
     );
   }
 
-  const recentTracks = history.slice(0, 6);
+  const recentTracks = history.slice(0, 4);
 
   return (
-    <div className="space-y-10 py-4 select-none pb-24 font-sans text-white">
+    <div className="space-y-8 py-2 select-none pb-24 font-sans text-white">
       
-      {/* 1. INTERACTIVE CATEGORY PILLS */}
-      <div className="flex items-center gap-2.5 overflow-x-auto pb-2 scrollbar-none shrink-0 -mx-4 px-4">
+      {/* 1. TOP BAR */}
+      <div className="flex items-center justify-between pb-4 border-b border-white/5">
+        <div className="space-y-0.5">
+          <h1 className="text-lg font-black tracking-wider uppercase text-white flex items-center gap-2">
+            <span>Beranda</span>
+            <span className="text-[10px] font-bold text-[#ff004f] bg-[#ff004f]/10 border border-[#ff004f]/20 px-2 py-0.5 rounded-md uppercase tracking-widest">
+              Sovereign Flow
+            </span>
+          </h1>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-full bg-zinc-900 border border-white/5 flex items-center justify-center text-zinc-400 shadow-md">
+            <User size={14} />
+          </div>
+        </div>
+      </div>
+
+      {/* 2. GREETING HERO CARD WITH INTEGRATED SEARCH */}
+      <GreetingHeader />
+
+      {/* 2. CURATED MIDNIGHT DRIVE HERO CARD */}
+      <div className="relative w-full rounded-3xl overflow-hidden border border-white/10 bg-gradient-to-r from-violet-950 via-[#0a0a0f] to-zinc-950 p-6 sm:p-8 flex flex-col md:flex-row items-center justify-between gap-6 shadow-[0_20px_50px_rgba(0,0,0,0.6)]">
+        {/* Abstract futuristic background vector */}
+        <div className="absolute right-0 top-0 bottom-0 w-1/2 bg-gradient-to-l from-pink-500/10 to-transparent opacity-60 pointer-events-none" />
+        <div className="absolute left-0 bottom-0 w-1/3 h-1/2 bg-gradient-to-tr from-[#ff004f]/10 to-transparent opacity-40 pointer-events-none" />
+
+        <div className="space-y-4 max-w-lg z-10 relative">
+          <div className="flex items-center gap-2 text-[#ff004f] bg-[#ff004f]/10 border border-[#ff004f]/20 px-3 py-1 rounded-full w-fit">
+            <Sparkles size={11} className="animate-pulse" />
+            <span className="text-[9px] font-black uppercase tracking-wider">Curated Experience</span>
+          </div>
+
+          <div className="space-y-1.5">
+            <h1 className="text-2xl sm:text-3xl font-black tracking-tight leading-tight">Midnight Drive Mix</h1>
+            <p className="text-[11px] text-zinc-400 font-semibold leading-relaxed">
+              Kompilasi retro synthwave, lofi beats, dan neon vibes teratas untuk menemani perjalanan malam atau fokus coding Anda.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3.5 pt-1">
+            <button
+              onClick={handlePlayMidnightDrive}
+              className="flex items-center justify-center gap-2 px-5 py-3 bg-[#ff004f] hover:bg-[#ff1a5f] text-white text-xs font-black uppercase tracking-wider rounded-2xl transition-all cursor-pointer shadow-lg shadow-[#ff004f]/20 active:scale-95"
+            >
+              <Play size={12} fill="white" />
+              <span>Putar Campuran</span>
+            </button>
+            <button
+              onClick={() => router.push("/search?q=synthwave")}
+              className="flex items-center justify-center gap-2 px-4 py-3 bg-zinc-900 border border-white/5 hover:bg-zinc-800 text-zinc-300 hover:text-white text-xs font-bold rounded-2xl transition-all cursor-pointer"
+            >
+              <Compass size={12} />
+              <span>Eksplorasi</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Hero Artwork Graphic */}
+        <div className="relative w-44 h-44 sm:w-48 sm:h-48 rounded-2xl overflow-hidden shrink-0 border border-white/10 shadow-2xl z-10 rotate-2 hover:rotate-0 transition-transform duration-500">
+          <Image
+            src="https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=600"
+            alt="Midnight Drive Graphic"
+            fill
+            className="object-cover"
+            priority
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex flex-col justify-end p-4">
+            <p className="text-[10px] font-black uppercase tracking-widest text-[#ff004f]">Neon Ride</p>
+            <p className="text-[9px] text-zinc-400 mt-0.5">AntiAlgo Selection</p>
+          </div>
+        </div>
+      </div>
+
+      {/* 3. CATEGORY PILLS */}
+      <div className="flex items-center gap-2.5 overflow-x-auto pb-1.5 scrollbar-none shrink-0 -mx-4 px-4">
         {CATEGORIES.map((cat) => {
           const Icon = cat.icon;
           const isActive = activeCategoryId === cat.id;
@@ -147,26 +205,23 @@ export default function Home() {
             <button
               key={cat.id}
               onClick={() => setActiveCategoryId(cat.id)}
-              className={`flex items-center gap-2 px-4.5 py-2 rounded-full text-xs font-bold tracking-wide cursor-pointer transition-all shrink-0 border select-none ${
+              className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold tracking-wide cursor-pointer transition-all shrink-0 border select-none ${
                 isActive
-                  ? "bg-white text-black border-white shadow-lg shadow-black/40 scale-105"
-                  : "bg-[#18181c]/60 border-white/5 text-white hover:bg-[#24242c]/80 hover:border-white/10"
+                  ? "bg-white text-black border-white shadow-lg scale-105"
+                  : "bg-zinc-900/40 border-white/5 text-zinc-400 hover:bg-zinc-800/60 hover:text-white hover:border-white/10"
               }`}
             >
-              <Icon size={14} className={isActive ? "text-[#ff004f]" : "text-muted-foreground"} />
+              <Icon size={12} className={isActive ? "text-[#ff004f]" : "text-zinc-500"} />
               <span>{cat.label}</span>
             </button>
           );
         })}
       </div>
 
-      {/* 2. DYNAMIC GREETING PANEL */}
-      <GreetingHeader />
-
-      {/* 3. ANTIDALGO MOOD RADIO STATIONS */}
+      {/* 4. ANTIDALGO MOOD RADIO STATIONS */}
       <AntiMusicFlowSection />
 
-      {/* 4. QUICK PICKS 4x2 GRID WITH GLOBAL CONTEXT MENUS */}
+      {/* 5. QUICK PICKS (PILIHAN CEPAT) */}
       <div className="space-y-4">
         <div className="flex items-center justify-between border-b border-white/5 pb-2">
           <div className="space-y-0.5">
@@ -174,10 +229,10 @@ export default function Home() {
               <Flame size={13} />
               <span>Pilihan Cepat</span>
             </h2>
-            <p className="text-[10px] text-muted-foreground font-medium">Lagu teratas yang sesuai dengan suasana hati aktif Anda</p>
+            <p className="text-[10px] text-zinc-500 font-semibold">Disesuaikan dengan kategori aktif Anda saat ini</p>
           </div>
-          <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground/60 border border-white/5 bg-white/5 px-2.5 py-1 rounded-lg">
-            Hasil Scraper Musik
+          <span className="text-[8px] font-black uppercase tracking-widest text-zinc-500 bg-white/5 border border-white/5 px-2.5 py-1 rounded-lg">
+            Scraped Live
           </span>
         </div>
 
@@ -194,7 +249,7 @@ export default function Home() {
             ))}
           </div>
         ) : quickPicks.length === 0 ? (
-          <div className="py-8 text-center text-xs text-muted-foreground italic border border-dashed border-neutral-800 rounded-xl">
+          <div className="py-8 text-center text-xs text-zinc-500 italic border border-dashed border-zinc-800 rounded-xl">
             Gagal mengambil pilihan lagu. Periksa koneksi internet Anda.
           </div>
         ) : (
@@ -202,11 +257,11 @@ export default function Home() {
             {quickPicks.map((song, index) => (
               <ContextMenu key={song.id} song={song} className="w-full">
                 <div
-                  className="flex items-center justify-between p-2 rounded-xl bg-white/[0.02] hover:bg-white/[0.06] border border-white/5 hover:border-white/10 group transition-all duration-250 cursor-pointer"
+                  className="flex items-center justify-between p-2 rounded-2xl bg-zinc-900/10 hover:bg-zinc-900/40 border border-white/5 hover:border-white/10 group transition-all duration-250 cursor-pointer"
                   onClick={() => handlePlaySong(song, index, quickPicks)}
                 >
                   <div className="flex items-center gap-3.5 min-w-0 flex-1">
-                    <div className="relative w-12 h-12 rounded-lg overflow-hidden shrink-0 border border-white/5 bg-white/5 shadow">
+                    <div className="relative w-12 h-12 rounded-xl overflow-hidden shrink-0 border border-white/5 bg-zinc-900 shadow">
                       <Image 
                         src={song.thumbnail} 
                         alt={song.title} 
@@ -214,8 +269,6 @@ export default function Home() {
                         sizes="(max-width: 48px) 100vw"
                         className="object-cover transition-transform group-hover:scale-105" 
                       />
-                      
-                      {/* Tiny hover play trigger */}
                       <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all">
                         <Play size={10} fill="white" className="text-white" />
                       </div>
@@ -224,15 +277,14 @@ export default function Home() {
                       <h4 className="text-xs font-black text-white truncate group-hover:text-[#ff004f] transition-colors">
                         {song.title}
                       </h4>
-                      <p className="text-[10px] text-muted-foreground truncate mt-0.5 font-medium">{song.artist}</p>
+                      <p className="text-[10px] text-zinc-500 truncate mt-0.5 font-bold">{song.artist}</p>
                     </div>
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-[10px] font-mono text-muted-foreground px-2">
+                    <span className="text-[10px] font-mono text-zinc-500 px-2 font-bold">
                       {song.duration}
                     </span>
-                    {/* Trigger local click context menu directly */}
                     <div onClick={(e) => e.stopPropagation()}>
                       <ContextMenu song={song} triggerType="click" />
                     </div>
@@ -244,53 +296,48 @@ export default function Home() {
         )}
       </div>
 
-      {/* 5. RECENTLY PLAYED SHELF (Listen Again) */}
+      {/* 6. COMPACT RECENTLY PLAYED ROWS (PUTAR LAGI) */}
       {recentTracks.length > 0 && (
         <div className="space-y-4">
           <div className="flex items-center justify-between border-b border-white/5 pb-2">
             <div className="space-y-0.5">
               <h2 className="text-xs font-black uppercase tracking-widest text-white flex items-center gap-2">
-                <Clock size={13} className="text-muted-foreground" />
+                <Clock size={13} className="text-zinc-500" />
                 <span>Putar Lagi</span>
               </h2>
-              <p className="text-[10px] text-muted-foreground font-medium">Lagu yang baru-baru ini Anda dengarkan</p>
+              <p className="text-[10px] text-zinc-500 font-semibold font-sans">Lagu yang baru-baru ini diputar</p>
             </div>
-            <Link href="/library" className="text-[10px] font-black uppercase tracking-widest text-muted-foreground hover:text-[#ff004f] transition-colors">
+            <Link href="/library" className="text-[10px] font-black uppercase tracking-widest text-[#ff004f] hover:underline">
               Lihat Riwayat
             </Link>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {recentTracks.map((item, idx) => (
               <ContextMenu key={`${item.song.id}-${idx}`} song={item.song} className="w-full text-left">
                 <div
                   onClick={() => handlePlaySingle(item.song)}
-                  className="p-3 bg-[#111113]/40 hover:bg-[#1a1a22]/50 border border-transparent hover:border-white/5 rounded-2xl group transition-all duration-300 relative cursor-pointer text-center sm:text-left h-full flex flex-col justify-between"
+                  className="flex items-center gap-4 p-3 bg-zinc-900/10 hover:bg-zinc-900/30 border border-white/5 rounded-2xl group transition-all duration-300 relative cursor-pointer"
                 >
-                  <div className="relative aspect-square w-full rounded-xl overflow-hidden mb-3 shadow-md border border-white/5 bg-zinc-900">
+                  <div className="relative w-12 h-12 rounded-xl overflow-hidden shrink-0 border border-white/5 bg-zinc-900">
                     <Image
                       src={item.song.thumbnail}
                       alt={item.song.title}
                       fill
-                      sizes="(max-width: 150px) 100vw"
-                      className="object-cover transition-transform duration-500 group-hover:scale-105"
+                      sizes="(max-width: 48px) 100vw"
+                      className="object-cover"
                     />
-                    
-                    {/* Play circle trigger */}
-                    <div className="absolute inset-0 bg-black/45 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all duration-300">
-                      <div className="w-9 h-9 rounded-full bg-[#ff004f] hover:bg-[#ff1a5f] hover:scale-105 active:scale-95 text-white flex items-center justify-center shadow-lg translate-y-2 group-hover:translate-y-0 transition-all">
-                        <Play size={11} fill="white" className="ml-0.5 text-white" />
-                      </div>
-                    </div>
                   </div>
-
-                  <div>
-                    <h4 className="text-xs font-extrabold text-white line-clamp-1 group-hover:text-[#ff004f] transition-colors">
+                  <div className="min-w-0 flex-1">
+                    <h4 className="text-xs font-black text-white truncate group-hover:text-[#ff004f] transition-colors">
                       {item.song.title}
                     </h4>
-                    <p className="text-[10px] text-muted-foreground mt-0.5 truncate font-medium">
+                    <p className="text-[10px] text-zinc-500 mt-0.5 truncate font-bold">
                       {item.song.artist}
                     </p>
+                  </div>
+                  <div className="p-2 bg-white/5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Play size={12} fill="white" className="text-white ml-0.5" />
                   </div>
                 </div>
               </ContextMenu>
@@ -299,103 +346,46 @@ export default function Home() {
         </div>
       )}
 
-      {/* 6. RECOMMENDED ALBUMS SHELF */}
+      {/* 7. POPULAR ARTISTS CIRCULAR CARDS */}
       <div className="space-y-4">
         <div className="flex items-center justify-between border-b border-white/5 pb-2">
           <div className="space-y-0.5">
             <h2 className="text-xs font-black uppercase tracking-widest text-white flex items-center gap-2">
-              <Library size={13} className="text-[#ff004f]" />
-              <span>Rekomendasi Album</span>
+              <Compass size={13} className="text-[#ff004f]" />
+              <span>Artis Populer</span>
             </h2>
-            <p className="text-[10px] text-muted-foreground font-medium">Koleksi album populer untuk dieksplorasi</p>
+            <p className="text-[10px] text-zinc-500 font-semibold">Rekomendasi artis untuk Anda dengarkan</p>
           </div>
         </div>
 
-        {loadingAlbums ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
-            {Array.from({ length: 6 }).map((_, idx) => (
-              <div key={idx} className="p-3 bg-white/5 border border-white/5 rounded-2xl animate-pulse space-y-3">
-                <div className="aspect-square w-full rounded-xl bg-white/5" />
-                <div className="h-3 w-3/4 rounded bg-white/5 animate-pulse" />
+        <div className="grid grid-cols-4 gap-4">
+          {(savedArtists.length > 0 ? savedArtists.slice(0, 4) : MOCK_POPULAR_ARTISTS).map((art) => (
+            <div
+              key={art.id}
+              onClick={() => setSelectedArtistId(art.id)}
+              className="flex flex-col items-center gap-3 p-3 rounded-2xl hover:bg-zinc-900/10 transition-all duration-350 cursor-pointer text-center group"
+            >
+              <div className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-full overflow-hidden border border-white/10 shadow-lg shrink-0 bg-zinc-900">
+                <Image 
+                  src={art.thumbnail} 
+                  alt={art.title || "Artist"} 
+                  fill 
+                  sizes="(max-width: 80px) 100vw"
+                  className="object-cover transition-transform duration-500 group-hover:scale-110"
+                />
               </div>
-            ))}
-          </div>
-        ) : trendingAlbums.length === 0 ? (
-          <div className="py-6 text-center text-xs text-muted-foreground italic border border-dashed border-neutral-800 rounded-xl">
-            Tidak ada album rekomendasi saat ini.
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
-            {trendingAlbums.map((album) => (
-              <div
-                key={album.id}
-                onClick={() => setSelectedAlbumId(album.id)}
-                className="p-3 bg-[#111113]/40 hover:bg-[#1a1a22]/50 border border-transparent hover:border-white/5 rounded-2xl group transition-all duration-300 relative cursor-pointer text-center sm:text-left"
-              >
-                <div className="relative aspect-square w-full rounded-xl overflow-hidden mb-3 shadow-md border border-white/5 bg-zinc-950">
-                  <Image
-                    src={album.thumbnail}
-                    alt={album.title}
-                    fill
-                    sizes="(max-width: 150px) 100vw"
-                    className="object-cover transition-transform duration-500 group-hover:scale-105"
-                  />
-                </div>
-
-                <h4 className="text-xs font-extrabold text-white line-clamp-1 group-hover:text-[#ff004f] transition-colors">
-                  {album.title}
+              <div className="truncate w-full">
+                <h4 className="text-[11px] font-black text-white truncate group-hover:text-[#ff004f] transition-colors">
+                  {art.title}
                 </h4>
-                <p className="text-[10px] text-muted-foreground mt-0.5 truncate font-medium">
-                  {album.artist}
+                <p className="text-[8px] uppercase tracking-wider font-extrabold text-zinc-500 mt-0.5">
+                  Popular Artist
                 </p>
               </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* 7. FEATURED ARTISTS SHELF */}
-      {savedArtists.length > 0 && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between border-b border-white/5 pb-2">
-            <div className="space-y-0.5">
-              <h2 className="text-xs font-black uppercase tracking-widest text-white flex items-center gap-2">
-                <Music2 size={13} className="text-purple-400" />
-                <span>Artis Favorit Anda</span>
-              </h2>
-              <p className="text-[10px] text-muted-foreground font-medium">Profil artis tersimpan lokal</p>
             </div>
-          </div>
-
-          <div className="grid grid-cols-3 sm:grid-cols-6 gap-4">
-            {savedArtists.slice(0, 6).map((art) => (
-              <div
-                key={art.id}
-                onClick={() => setSelectedArtistId(art.id)}
-                className="flex flex-col items-center gap-3.5 p-3 rounded-2xl bg-white/[0.01] hover:bg-white/[0.05] border border-transparent hover:border-white/5 transition-all duration-350 cursor-pointer text-center group"
-              >
-                <div className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-full overflow-hidden border border-white/10 shadow-lg shrink-0 bg-zinc-950">
-                  <Image 
-                    src={art.thumbnail} 
-                    alt={art.title} 
-                    fill 
-                    sizes="(max-width: 96px) 100vw"
-                    className="object-cover transition-transform duration-500 group-hover:scale-108"
-                  />
-                </div>
-                <div className="truncate w-full">
-                  <h4 className="text-xs font-black text-white truncate group-hover:text-[#ff004f] transition-colors">
-                    {art.title}
-                  </h4>
-                  <p className="text-[9px] uppercase tracking-wider font-extrabold text-muted-foreground mt-0.5">
-                    Saved Artist
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
+          ))}
         </div>
-      )}
+      </div>
 
     </div>
   );

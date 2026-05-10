@@ -2,14 +2,15 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import Image from "next/image";
+import { SafeImage as Image } from "@/components/common/SafeImage";
 import { usePlayerStore } from "@/store/usePlayerStore";
 import { useQueueStore } from "@/store/useQueueStore";
 import { useLibraryStore } from "@/store/useLibraryStore";
 import { useUIStore } from "@/store/useUIStore";
 import { 
   Play, Pause, SkipForward, SkipBack, Volume2, VolumeX, 
-  ChevronUp, ChevronDown, Plus, Music, Loader2, Check, Users, Sparkles
+  ChevronUp, ChevronDown, Plus, Music, Loader2, Check, Users, Sparkles,
+  Minimize2, EyeOff, PanelRight, Music2
 } from "lucide-react";
 import SyncedLyricsView from "./SyncedLyricsView";
 import { useRoomStore } from "@/store/useRoomStore";
@@ -32,7 +33,11 @@ export default function MiniPlayer() {
 
   const { queue, currentIndex, playFromQueue, removeFromQueue, nextSong, prevSong } = useQueueStore();
   const { playlists, createPlaylist, addSongToPlaylist } = useLibraryStore();
-  const { setSelectedArtistId, setSelectedAlbumId } = useUIStore();
+  const { 
+    setSelectedArtistId, setSelectedAlbumId, 
+    isRightPanelOpen, isMiniPlayerHidden, 
+    setRightPanelOpen, setMiniPlayerHidden 
+  } = useUIStore();
 
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<"player" | "lyrics" | "queue" | "recommendations">("player");
@@ -115,9 +120,11 @@ export default function MiniPlayer() {
 
   return (
     <>
-      {/* 1. MINI PLAYER (STICKY AT BOTTOM) */}
+      {/* 1. MINI PLAYER (PREMIUM FLOATING CAPSULE/PILL DESIGN) */}
       <div 
-        className="fixed bottom-16 md:bottom-0 left-0 right-0 md:left-64 h-20 border-t border-white/5 bg-[#07070a]/95 backdrop-blur-xl px-4 md:px-8 flex items-center justify-between z-30 select-none shadow-2xl transition-all duration-300"
+        className={`fixed left-3.5 right-3.5 bottom-[4.8rem] md:bottom-6 md:left-[calc(16rem+2rem)] md:right-8 h-20 rounded-3xl border border-white/10 bg-[#07070a]/75 backdrop-blur-3xl px-4 md:px-8 flex items-center justify-between z-30 select-none shadow-[0_20px_50px_rgba(0,0,0,0.85)] hover:border-[#ff004f]/20 hover:shadow-[#ff004f]/5 transition-all duration-500 cursor-pointer ${
+          isMiniPlayerHidden ? "translate-y-36 opacity-0 pointer-events-none" : "translate-y-0 opacity-100"
+        } ${isRightPanelOpen ? "xl:right-[calc(20rem+2rem)]" : "xl:right-8"}`}
         onClick={() => setIsExpanded(true)}
       >
         {/* Track details (Left) */}
@@ -268,11 +275,32 @@ export default function MiniPlayer() {
             />
           </div>
 
+          {/* Toggle Panel Kanan (Sedang Diputar) */}
+          <button 
+            onClick={() => setRightPanelOpen(!isRightPanelOpen)}
+            className={`hidden xl:flex p-1.5 rounded-xl transition-all cursor-pointer hover:bg-white/5 ${
+              isRightPanelOpen ? "text-[#ff004f]" : "text-muted-foreground hover:text-white"
+            }`}
+            title={isRightPanelOpen ? "Sembunyikan Panel Kanan" : "Tampilkan Panel Kanan"}
+          >
+            <PanelRight size={18} className={isRightPanelOpen ? "stroke-[2.5]" : ""} />
+          </button>
+
+          {/* Sembunyikan Player Bar */}
+          <button 
+            onClick={() => setMiniPlayerHidden(true)}
+            className="p-1.5 rounded-xl text-muted-foreground hover:text-white hover:bg-white/5 transition-all cursor-pointer"
+            title="Sembunyikan Pemutar"
+          >
+            <EyeOff size={18} />
+          </button>
+
           <button 
             onClick={() => setIsExpanded(true)}
-            className="text-muted-foreground hover:text-white transition-colors cursor-pointer"
+            className="p-1.5 rounded-xl text-muted-foreground hover:text-white hover:bg-white/5 transition-all cursor-pointer"
+            title="Perbesar Layar"
           >
-            <ChevronUp size={20} />
+            <ChevronUp size={18} />
           </button>
         </div>
       </div>
@@ -622,6 +650,20 @@ export default function MiniPlayer() {
       {/* 4. SYNC ROOM MODAL */}
       {showSyncModal && (
         <SyncRoomModal onClose={() => setShowSyncModal(false)} />
+      )}
+
+      {/* 5. RESTORE FLOATING LAUNCHER BUBBLE */}
+      {isMiniPlayerHidden && (
+        <button
+          onClick={() => setMiniPlayerHidden(false)}
+          className="fixed bottom-[5.2rem] right-4 md:bottom-8 md:right-8 z-40 p-4 rounded-full bg-[#ff004f] hover:bg-[#ff1a5f] text-white shadow-[0_10px_30px_rgba(255,0,79,0.45)] hover:scale-110 active:scale-95 transition-all duration-300 group cursor-pointer border border-white/10"
+          title="Tampilkan Pemutar Musik"
+        >
+          <div className="relative w-5 h-5 flex items-center justify-center">
+            <span className="absolute -inset-2 rounded-full bg-[#ff004f]/40 animate-ping opacity-75" />
+            <Music2 size={16} className="relative z-10 animate-pulse" />
+          </div>
+        </button>
       )}
     </>
   );
