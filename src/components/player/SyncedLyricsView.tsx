@@ -13,6 +13,7 @@ interface SyncedLyricsViewProps {
 
 export default function SyncedLyricsView({ title, artist, songId }: SyncedLyricsViewProps) {
   const currentTime = usePlayerStore((state) => state.currentTime);
+  const duration = usePlayerStore((state) => state.duration);
   const [lyrics, setLyrics] = useState<LyricsResult | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [activeLineIndex, setActiveLineIndex] = useState<number>(-1);
@@ -56,25 +57,40 @@ export default function SyncedLyricsView({ title, artist, songId }: SyncedLyrics
     };
   }, [songId, title, artist]);
 
-  // Sync active line index with player's currentTime
+  // Sync active line index with player's currentTime (supports synced and unsynced estimated scroll)
   useEffect(() => {
-    if (!lyrics || !lyrics.synced || lyrics.lines.length === 0) return;
+    if (!lyrics || lyrics.lines.length === 0) return;
 
-    const lines = lyrics.lines;
-    let foundIndex = -1;
-    for (let i = 0; i < lines.length; i++) {
-      const lineTime = lines[i].time ?? 0;
-      if (currentTime >= lineTime) {
-        foundIndex = i;
-      } else {
-        break;
+    if (lyrics.synced) {
+      const lines = lyrics.lines;
+      let foundIndex = -1;
+      for (let i = 0; i < lines.length; i++) {
+        const lineTime = lines[i].time ?? 0;
+        if (currentTime >= lineTime) {
+          foundIndex = i;
+        } else {
+          break;
+        }
+      }
+
+      if (foundIndex !== activeLineIndex) {
+        setActiveLineIndex(foundIndex);
+      }
+    } else {
+      // Unsynced/plain lyrics: estimate active line based on current duration progress
+      if (duration > 0) {
+        const progress = currentTime / duration;
+        const totalLines = lyrics.lines.length;
+        const estimatedIndex = Math.min(
+          Math.floor(progress * totalLines),
+          totalLines - 1
+        );
+        if (estimatedIndex !== activeLineIndex) {
+          setActiveLineIndex(estimatedIndex);
+        }
       }
     }
-
-    if (foundIndex !== activeLineIndex) {
-      setActiveLineIndex(foundIndex);
-    }
-  }, [currentTime, lyrics, activeLineIndex]);
+  }, [currentTime, lyrics, activeLineIndex, duration]);
 
   // Scroll active line into center
   useEffect(() => {
@@ -106,7 +122,7 @@ export default function SyncedLyricsView({ title, artist, songId }: SyncedLyrics
 
   return (
     <div className="h-full overflow-y-auto px-6 py-16 scrollbar-none select-none" ref={linesContainerRef}>
-      <div className="flex flex-col gap-6 text-left max-w-lg mx-auto pb-32">
+      <div className="flex flex-col gap-6 text-center max-w-lg mx-auto pb-32">
         {lyrics.lines.map((line, index) => {
           const isSynced = lyrics.synced;
           const isActive = index === activeLineIndex;
@@ -117,18 +133,20 @@ export default function SyncedLyricsView({ title, artist, songId }: SyncedLyrics
               ref={(el) => {
                 lineRefs.current[index] = el;
               }}
-              className={`text-xl md:text-2xl font-black tracking-tight leading-relaxed transition-all duration-300 origin-left cursor-pointer ${
-                isSynced
-                  ? isActive
-                    ? "text-white scale-105 filter drop-shadow-[0_0_10px_rgba(255,0,79,0.45)] opacity-100"
-                    : index < activeLineIndex
-                    ? "text-white/20 hover:text-white/40 font-bold"
-                    : "text-white/40 hover:text-white/80 font-bold"
-                  : "text-white/80 font-bold text-center"
+              className={`text-xl md:text-2xl font-black tracking-tight leading-relaxed transition-all duration-300 origin-center cursor-pointer text-center ${
+                isActive
+                  ? "text-white scale-105 filter drop-shadow-[0_0_10px_rgba(255,0,79,0.45)] opacity-100"
+                  : index < activeLineIndex
+                  ? "text-white/20 hover:text-white/40 font-bold"
+                  : "text-white/40 hover:text-white/80 font-bold"
               }`}
               onClick={() => {
                 if (isSynced && line.time !== undefined) {
                   usePlayerStore.getState().seekTo(line.time);
+                } else if (!isSynced && duration > 0) {
+                  // Seek to estimated time for unsynced lyrics
+                  const estimatedTime = (index / lyrics.lines.length) * duration;
+                  usePlayerStore.getState().seekTo(estimatedTime);
                 }
               }}
             >
